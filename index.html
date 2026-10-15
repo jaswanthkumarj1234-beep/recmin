@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Record Minutes Timer</title>
 <style>
   :root{
@@ -32,6 +35,14 @@
     border:1px solid var(--border);
     border-radius:20px;
     padding:32px 28px;
+    position:relative;
+  }
+  .ver{
+    position:absolute;
+    top:12px;
+    right:16px;
+    font-size:11px;
+    color:var(--muted);
   }
   h1{
     font-size:20px;
@@ -64,12 +75,23 @@
   input:focus{
     border-color:var(--orange);
   }
+  .banner{
+    text-align:center;
+    background:var(--orange);
+    color:#111;
+    font-weight:800;
+    font-size:20px;
+    letter-spacing:1px;
+    border-radius:12px;
+    padding:12px;
+    margin-bottom:6px;
+  }
   .timer-display{
     text-align:center;
     font-size:56px;
     font-weight:700;
     color:var(--orange);
-    margin:28px 0 8px;
+    margin:20px 0 8px;
     font-variant-numeric:tabular-nums;
   }
   .status{
@@ -77,7 +99,7 @@
     color:var(--muted);
     font-size:13px;
     min-height:18px;
-    margin-bottom:20px;
+    margin-bottom:6px;
   }
   .btn{
     width:100%;
@@ -97,10 +119,6 @@
     background:transparent;
     border:1px solid var(--border);
     color:var(--white);
-  }
-  .btn:disabled{
-    opacity:0.4;
-    cursor:not-allowed;
   }
   .mic-row{
     display:flex;
@@ -144,6 +162,7 @@
 <body>
 
 <div class="card">
+  <div class="ver">v3</div>
   <h1>Record Minutes Timer</h1>
   <div class="sub">Set your length and command, then say it to start.</div>
 
@@ -156,16 +175,16 @@
 
     <div class="mic-row">
       <div class="mic-dot" id="micDot"></div>
-      <div class="mic-label" id="micLabel">Mic is off</div>
+      <div class="mic-label" id="micLabel">Mic is OFF</div>
     </div>
 
     <button class="btn btn-primary" id="armBtn">Arm &amp; Listen</button>
 
     <div class="hint">
-      Press Arm &amp; Listen, then say your command. The app replies
-      "Video started" and the mic switches off completely. It never
+      Press Arm &amp; Listen, then say your command. The app says
+      "Video started" and the mic switches OFF automatically. It never
       listens during recording or after it ends. Press Arm &amp; Listen
-      again for the next video.
+      again for the next video. Voice detection needs Chrome or Edge.
     </div>
 
     <label for="manualType" style="margin-top:20px;">Or type the command and press Enter</label>
@@ -173,8 +192,10 @@
   </div>
 
   <div id="runView" style="display:none;">
+    <div class="banner" id="banner">VIDEO STARTED</div>
     <div class="timer-display" id="display">23:00</div>
     <div class="status" id="status">Recording in progress</div>
+    <div class="status" id="micStatus">Mic is OFF</div>
     <button class="btn btn-secondary" id="cancelBtn">Cancel session</button>
   </div>
 
@@ -191,6 +212,7 @@ const setupView = document.getElementById('setupView');
 const runView = document.getElementById('runView');
 const display = document.getElementById('display');
 const status = document.getElementById('status');
+const banner = document.getElementById('banner');
 const micDot = document.getElementById('micDot');
 const micLabel = document.getElementById('micLabel');
 const logEl = document.getElementById('log');
@@ -202,6 +224,7 @@ let timerInterval = null;
 let totalSeconds = 0;
 let remainingSeconds = 0;
 let announced = new Set();
+let audioCtx = null;
 
 function log(msg){
   const d = document.createElement('div');
@@ -210,12 +233,50 @@ function log(msg){
   logEl.prepend(d);
 }
 
+// Created on a user click so the browser allows sound later.
+function prepAudio(){
+  try{
+    if(!audioCtx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if(AC) audioCtx = new AC();
+    }
+    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }catch(e){}
+}
+
+function beep(){
+  try{
+    if(!audioCtx) return;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.value = 880;
+    g.gain.value = 0.15;
+    o.connect(g);
+    g.connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + 0.25);
+  }catch(e){}
+}
+
 function speak(text){
-  const u = new SpeechSynthesisUtterance(text);
-  u.rate = 1;
-  u.pitch = 1;
-  u.volume = 1;
-  window.speechSynthesis.speak(u);
+  try{
+    const synth = window.speechSynthesis;
+    if(!synth){ log('Speech not supported in this browser'); return; }
+    synth.resume();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US';
+    u.rate = 1;
+    u.pitch = 1;
+    u.volume = 1;
+    const voices = synth.getVoices();
+    const v = voices.find(x => x.lang && x.lang.toLowerCase().startsWith('en'));
+    if(v) u.voice = v;
+    u.onerror = (e) => log('Speech error: ' + e.error);
+    synth.speak(u);
+  }catch(e){
+    log('Speech failed: ' + e.message);
+  }
 }
 
 function normalize(s){
@@ -231,7 +292,7 @@ function startSession(){
     return;
   }
 
-  // Mic off for good before anything else happens.
+  // 1) Mic off automatically, before anything else.
   sessionActive = true;
   stopListening();
 
@@ -240,12 +301,15 @@ function startSession(){
   announced = new Set();
   setupView.style.display = 'none';
   runView.style.display = 'block';
+  banner.textContent = 'VIDEO STARTED';
   status.textContent = 'Recording in progress';
+  document.getElementById('micStatus').textContent = 'Mic is OFF';
   log(`Command understood — video started, target ${mins} min`);
   updateDisplay();
 
-  window.speechSynthesis.cancel();
-  speak('Video started');
+  // 2) Confirm: beep right away, then speak once the mic has fully closed.
+  beep();
+  setTimeout(() => speak('Video started'), 500);
 
   timerInterval = setInterval(tick, 1000);
 }
@@ -272,10 +336,12 @@ function tick(){
 
   if(remainingSeconds <= 0){
     clearInterval(timerInterval);
+    beep();
     speak('Time is up. Stop recording now.');
     log('Limit reached — stop recording');
-    status.textContent = 'Time is up — stop recording';
-    setTimeout(resetToSetup, 4000);
+    banner.textContent = 'TIME IS UP';
+    status.textContent = 'Stop recording now';
+    setTimeout(resetToSetup, 5000);
   }
 }
 
@@ -285,7 +351,7 @@ function updateDisplay(){
   display.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
-// Back to the setup screen. The mic stays OFF until the user presses Arm & Listen.
+// Back to setup. The mic stays OFF until the user presses Arm & Listen.
 function resetToSetup(){
   sessionActive = false;
   runView.style.display = 'none';
@@ -295,13 +361,14 @@ function resetToSetup(){
 
 cancelBtn.addEventListener('click', () => {
   clearInterval(timerInterval);
-  window.speechSynthesis.cancel();
+  try{ window.speechSynthesis.cancel(); }catch(e){}
   log('Session cancelled');
   resetToSetup();
 });
 
 manualType.addEventListener('keydown', (e) => {
   if(e.key === 'Enter'){
+    prepAudio();
     const typed = normalize(manualType.value);
     const target = normalize(commandInput.value);
     manualType.value = '';
@@ -314,6 +381,7 @@ manualType.addEventListener('keydown', (e) => {
 });
 
 armBtn.addEventListener('click', () => {
+  prepAudio();
   if(!armed){
     startListening();
   } else {
@@ -325,7 +393,7 @@ function startListening(){
   if(sessionActive) return;
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if(!SpeechRecognition){
-    micLabel.textContent = 'Voice detection not supported in this browser — type command instead';
+    micLabel.textContent = 'Voice detection not supported in this browser — use Chrome/Edge or type the command';
     return;
   }
   recognition = new SpeechRecognition();
@@ -346,8 +414,13 @@ function startListening(){
 
   recognition.onerror = (e) => {
     log(`Mic error: ${e.error}`);
-    if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+    if(e.error === 'network'){
+      micLabel.textContent = 'This browser cannot do voice detection (try Chrome or Edge)';
       stopListening();
+      micLabel.textContent = 'This browser cannot do voice detection (try Chrome or Edge)';
+    } else if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      stopListening();
+      micLabel.textContent = 'Mic blocked — allow microphone access for this site';
     }
   };
 
@@ -370,17 +443,22 @@ function startListening(){
 
 function stopListening(){
   armed = false;
-  if(recognition){
-    recognition.onresult = null;
-    recognition.onerror = null;
-    recognition.onend = null;
-    try{ recognition.abort(); }catch(err){}
-    recognition = null;
+  const r = recognition;
+  recognition = null;
+  if(r){
+    r.onresult = null;
+    r.onerror = null;
+    r.onend = null;
+    try{ r.abort(); }catch(err){}
+    try{ r.stop(); }catch(err){}
   }
   micDot.classList.remove('live');
-  micLabel.textContent = 'Mic is off';
+  micLabel.textContent = 'Mic is OFF';
   armBtn.textContent = 'Arm & Listen';
 }
+
+// Load voices early so "Video started" can be spoken immediately.
+try{ window.speechSynthesis.getVoices(); }catch(e){}
 </script>
 
 </body>
