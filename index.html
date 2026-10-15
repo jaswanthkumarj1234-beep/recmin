@@ -4,157 +4,61 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
 <title>Record Minutes Timer</title>
 <style>
   :root{
-    --bg:#0d0d0d;
-    --panel:#161616;
-    --white:#f5f5f5;
-    --orange:#ff7a1a;
-    --muted:#8a8a8a;
-    --border:#2a2a2a;
+    --bg:#0d0d0d; --panel:#161616; --white:#f5f5f5;
+    --orange:#ff7a1a; --muted:#8a8a8a; --border:#2a2a2a;
   }
   *{box-sizing:border-box;}
   body{
-    margin:0;
-    background:var(--bg);
-    color:var(--white);
+    margin:0; background:var(--bg); color:var(--white);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    min-height:100vh;
-    padding:24px;
+    display:flex; align-items:center; justify-content:center;
+    min-height:100vh; padding:24px;
   }
   .card{
-    width:100%;
-    max-width:420px;
-    background:var(--panel);
-    border:1px solid var(--border);
-    border-radius:20px;
-    padding:32px 28px;
-    position:relative;
+    width:100%; max-width:420px; background:var(--panel);
+    border:1px solid var(--border); border-radius:20px;
+    padding:32px 28px; position:relative;
   }
-  .ver{
-    position:absolute;
-    top:12px;
-    right:16px;
-    font-size:11px;
-    color:var(--muted);
+  .ver{position:absolute; top:12px; right:16px; font-size:11px; color:var(--muted);}
+  h1{font-size:20px; font-weight:600; margin:0 0 4px;}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:24px;}
+  label{display:block; font-size:13px; color:var(--muted); margin:18px 0 6px;}
+  input[type="number"]{
+    width:100%; background:#0d0d0d; border:1px solid var(--border);
+    color:var(--white); padding:12px 14px; border-radius:12px;
+    font-size:16px; outline:none;
   }
-  h1{
-    font-size:20px;
-    font-weight:600;
-    margin:0 0 4px;
-    color:var(--white);
+  input:focus{border-color:var(--orange);}
+  .btn{
+    width:100%; padding:16px; border-radius:12px; border:none;
+    font-size:16px; font-weight:700; cursor:pointer; margin-top:12px;
   }
-  .sub{
-    color:var(--muted);
-    font-size:13px;
-    margin-bottom:28px;
-  }
-  label{
-    display:block;
-    font-size:13px;
-    color:var(--muted);
-    margin-bottom:6px;
-    margin-top:18px;
-  }
-  input[type="number"], input[type="text"]{
-    width:100%;
-    background:#0d0d0d;
-    border:1px solid var(--border);
-    color:var(--white);
-    padding:12px 14px;
-    border-radius:12px;
-    font-size:16px;
-    outline:none;
-  }
-  input:focus{
-    border-color:var(--orange);
-  }
+  .btn-primary{background:var(--orange); color:#111;}
+  .btn-secondary{background:transparent; border:1px solid var(--border); color:var(--white);}
   .banner{
-    text-align:center;
-    background:var(--orange);
-    color:#111;
-    font-weight:800;
-    font-size:20px;
-    letter-spacing:1px;
-    border-radius:12px;
-    padding:12px;
-    margin-bottom:6px;
+    text-align:center; background:var(--orange); color:#111;
+    font-weight:800; font-size:20px; letter-spacing:1px;
+    border-radius:12px; padding:12px;
   }
-  .timer-display{
-    text-align:center;
-    font-size:56px;
-    font-weight:700;
-    color:var(--orange);
-    margin:20px 0 8px;
+  .big{
+    text-align:center; font-size:72px; font-weight:800;
+    color:var(--orange); margin:24px 0 8px;
     font-variant-numeric:tabular-nums;
   }
-  .status{
-    text-align:center;
-    color:var(--muted);
-    font-size:13px;
-    min-height:18px;
-    margin-bottom:6px;
+  .timer-display{
+    text-align:center; font-size:56px; font-weight:700;
+    color:var(--orange); margin:20px 0 8px;
+    font-variant-numeric:tabular-nums;
   }
-  .btn{
-    width:100%;
-    padding:14px;
-    border-radius:12px;
-    border:none;
-    font-size:15px;
-    font-weight:600;
-    cursor:pointer;
-    margin-top:10px;
-  }
-  .btn-primary{
-    background:var(--orange);
-    color:#111;
-  }
-  .btn-secondary{
-    background:transparent;
-    border:1px solid var(--border);
-    color:var(--white);
-  }
-  .mic-row{
-    display:flex;
-    align-items:center;
-    gap:10px;
-    margin-top:18px;
-  }
-  .mic-dot{
-    width:10px;
-    height:10px;
-    border-radius:50%;
-    background:var(--border);
-    flex-shrink:0;
-  }
-  .mic-dot.live{
-    background:var(--orange);
-    box-shadow:0 0 0 4px rgba(255,122,26,0.15);
-  }
-  .mic-label{
-    font-size:12px;
-    color:var(--muted);
-  }
-  .hint{
-    font-size:11px;
-    color:var(--muted);
-    margin-top:24px;
-    line-height:1.5;
-  }
+  .status{text-align:center; color:var(--muted); font-size:13px; min-height:18px; margin-bottom:6px;}
+  .hint{font-size:11px; color:var(--muted); margin-top:20px; line-height:1.5;}
   .log{
-    margin-top:18px;
-    font-size:12px;
-    color:var(--muted);
-    max-height:90px;
-    overflow-y:auto;
-    border-top:1px solid var(--border);
-    padding-top:10px;
+    margin-top:18px; font-size:12px; color:var(--muted);
+    max-height:90px; overflow-y:auto;
+    border-top:1px solid var(--border); padding-top:10px;
   }
   .log div{margin-bottom:4px;}
 </style>
@@ -162,40 +66,34 @@
 <body>
 
 <div class="card">
-  <div class="ver">v3</div>
+  <div class="ver">v4</div>
   <h1>Record Minutes Timer</h1>
-  <div class="sub">Set your length and command, then say it to start.</div>
+  <div class="sub">No microphone. Press Start and it counts you in.</div>
 
   <div id="setupView">
     <label for="minutes">Video length (minutes)</label>
     <input type="number" id="minutes" min="1" value="23">
 
-    <label for="command">Start command</label>
-    <input type="text" id="command" value="3 2 1 start" placeholder="e.g. 3 2 1 start">
-
-    <div class="mic-row">
-      <div class="mic-dot" id="micDot"></div>
-      <div class="mic-label" id="micLabel">Mic is OFF</div>
-    </div>
-
-    <button class="btn btn-primary" id="armBtn">Arm &amp; Listen</button>
+    <button class="btn btn-primary" id="startBtn">Start — 3, 2, 1</button>
+    <button class="btn btn-secondary" id="testBtn">Test sound</button>
 
     <div class="hint">
-      Press Arm &amp; Listen, then say your command. The app says
-      "Video started" and the mic switches OFF automatically. It never
-      listens during recording or after it ends. Press Arm &amp; Listen
-      again for the next video. Voice detection needs Chrome or Edge.
+      Press Start. The app says "3, 2, 1, start" and "Video started", then
+      announces every 5 minutes, "1 minute to go", and "Time is up".
+      Keep this tab open and the screen on. Press Test sound first to
+      check your volume.
     </div>
+  </div>
 
-    <label for="manualType" style="margin-top:20px;">Or type the command and press Enter</label>
-    <input type="text" id="manualType" placeholder="Type command and press Enter">
+  <div id="countView" style="display:none;">
+    <div class="big" id="countNum">3</div>
+    <div class="status">Get ready…</div>
   </div>
 
   <div id="runView" style="display:none;">
     <div class="banner" id="banner">VIDEO STARTED</div>
     <div class="timer-display" id="display">23:00</div>
     <div class="status" id="status">Recording in progress</div>
-    <div class="status" id="micStatus">Mic is OFF</div>
     <button class="btn btn-secondary" id="cancelBtn">Cancel session</button>
   </div>
 
@@ -203,37 +101,32 @@
 </div>
 
 <script>
-const minutesInput = document.getElementById('minutes');
-const commandInput = document.getElementById('command');
-const manualType = document.getElementById('manualType');
-const armBtn = document.getElementById('armBtn');
-const cancelBtn = document.getElementById('cancelBtn');
-const setupView = document.getElementById('setupView');
-const runView = document.getElementById('runView');
-const display = document.getElementById('display');
-const status = document.getElementById('status');
-const banner = document.getElementById('banner');
-const micDot = document.getElementById('micDot');
-const micLabel = document.getElementById('micLabel');
-const logEl = document.getElementById('log');
+const $ = (id) => document.getElementById(id);
+const minutesInput = $('minutes');
+const setupView = $('setupView');
+const countView = $('countView');
+const runView = $('runView');
+const display = $('display');
+const banner = $('banner');
+const statusEl = $('status');
+const logEl = $('log');
 
-let recognition = null;
-let armed = false;
-let sessionActive = false;
-let timerInterval = null;
-let totalSeconds = 0;
-let remainingSeconds = 0;
-let announced = new Set();
 let audioCtx = null;
+let wakeLock = null;
+let tickTimer = null;
+let countTimers = [];
+let startTime = 0;
+let totalSeconds = 0;
+let milestones = [];
+let done = false;
 
 function log(msg){
   const d = document.createElement('div');
-  const t = new Date().toLocaleTimeString();
-  d.textContent = `${t} — ${msg}`;
+  d.textContent = `${new Date().toLocaleTimeString()} — ${msg}`;
   logEl.prepend(d);
 }
 
-// Created on a user click so the browser allows sound later.
+// Must be called from a click so the browser allows sound afterwards.
 function prepAudio(){
   try{
     if(!audioCtx){
@@ -244,33 +137,29 @@ function prepAudio(){
   }catch(e){}
 }
 
-function beep(){
+function beep(freq, ms){
   try{
     if(!audioCtx) return;
     const o = audioCtx.createOscillator();
     const g = audioCtx.createGain();
     o.type = 'sine';
-    o.frequency.value = 880;
-    g.gain.value = 0.15;
-    o.connect(g);
-    g.connect(audioCtx.destination);
+    o.frequency.value = freq || 880;
+    g.gain.value = 0.2;
+    o.connect(g); g.connect(audioCtx.destination);
     o.start();
-    o.stop(audioCtx.currentTime + 0.25);
+    o.stop(audioCtx.currentTime + (ms || 250) / 1000);
   }catch(e){}
 }
 
 function speak(text){
   try{
     const synth = window.speechSynthesis;
-    if(!synth){ log('Speech not supported in this browser'); return; }
+    if(!synth){ log('Speech not supported here'); return; }
     synth.resume();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'en-US';
-    u.rate = 1;
-    u.pitch = 1;
-    u.volume = 1;
-    const voices = synth.getVoices();
-    const v = voices.find(x => x.lang && x.lang.toLowerCase().startsWith('en'));
+    u.rate = 1; u.pitch = 1; u.volume = 1;
+    const v = synth.getVoices().find(x => x.lang && x.lang.toLowerCase().startsWith('en'));
     if(v) u.voice = v;
     u.onerror = (e) => log('Speech error: ' + e.error);
     synth.speak(u);
@@ -279,185 +168,133 @@ function speak(text){
   }
 }
 
-function normalize(s){
-  return s.toLowerCase().replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();
+function announce(text, showBanner){
+  speak(text);
+  beep(880, 200);
+  log(text);
+  if(showBanner){
+    banner.textContent = text.toUpperCase();
+    setTimeout(() => { if(!done) banner.textContent = 'RECORDING'; }, 4000);
+  }
 }
 
-function startSession(){
-  if(sessionActive) return;
+async function keepAwake(){
+  try{
+    if('wakeLock' in navigator){
+      wakeLock = await navigator.wakeLock.request('screen');
+    }
+  }catch(e){}
+}
+function releaseAwake(){
+  try{ if(wakeLock){ wakeLock.release(); wakeLock = null; } }catch(e){}
+}
 
+function fmt(secs){
+  const s = Math.max(secs, 0);
+  return `${String(Math.floor(s / 60)).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`;
+}
+
+function buildMilestones(total){
+  const list = [];
+  for(let m = 5; m * 60 < total - 60; m += 5){
+    list.push({ at: m * 60, text: `${m} minutes completed`, said: false });
+  }
+  if(total > 60){
+    list.push({ at: total - 60, text: '1 minute to go', said: false });
+  }
+  return list;
+}
+
+// ---- Start: spoken countdown, no microphone anywhere ----
+$('startBtn').addEventListener('click', () => {
   const mins = parseFloat(minutesInput.value);
   if(!mins || mins <= 0){
     alert('Enter a valid number of minutes first.');
     return;
   }
-
-  // 1) Mic off automatically, before anything else.
-  sessionActive = true;
-  stopListening();
-
+  prepAudio();
+  keepAwake();
+  done = false;
   totalSeconds = Math.round(mins * 60);
-  remainingSeconds = totalSeconds;
-  announced = new Set();
+  milestones = buildMilestones(totalSeconds);
+
   setupView.style.display = 'none';
+  countView.style.display = 'block';
+
+  try{ window.speechSynthesis.cancel(); }catch(e){}
+  const steps = [['3', 0], ['2', 1000], ['1', 2000]];
+  steps.forEach(([n, delay]) => {
+    countTimers.push(setTimeout(() => {
+      $('countNum').textContent = n;
+      speak(n);
+      beep(660, 150);
+    }, delay));
+  });
+  countTimers.push(setTimeout(beginRecording, 3000));
+});
+
+function beginRecording(){
+  countView.style.display = 'none';
   runView.style.display = 'block';
   banner.textContent = 'VIDEO STARTED';
-  status.textContent = 'Recording in progress';
-  document.getElementById('micStatus').textContent = 'Mic is OFF';
-  log(`Command understood — video started, target ${mins} min`);
-  updateDisplay();
-
-  // 2) Confirm: beep right away, then speak once the mic has fully closed.
-  beep();
-  setTimeout(() => speak('Video started'), 500);
-
-  timerInterval = setInterval(tick, 1000);
+  statusEl.textContent = 'Recording in progress';
+  startTime = Date.now();
+  display.textContent = fmt(totalSeconds);
+  speak('Start. Video started.');
+  beep(990, 400);
+  log(`Video started — target ${totalSeconds / 60} min`);
+  setTimeout(() => { if(!done) banner.textContent = 'RECORDING'; }, 4000);
+  // Real-clock based, so throttled background timers cannot drift or skip.
+  tickTimer = setInterval(tick, 500);
 }
 
 function tick(){
-  remainingSeconds--;
-  const elapsed = totalSeconds - remainingSeconds;
-  updateDisplay();
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const remaining = totalSeconds - elapsed;
+  display.textContent = fmt(remaining);
 
-  const elapsedMin = Math.floor(elapsed / 60);
-  const elapsedSec = elapsed % 60;
-
-  if(elapsedSec === 0 && [5,10,15,20].includes(elapsedMin) && !announced.has('e'+elapsedMin)){
-    announced.add('e'+elapsedMin);
-    speak(`${elapsedMin} minutes completed`);
-    log(`${elapsedMin} minutes completed`);
+  // Say the most recent milestone we have passed (catches up after throttling).
+  let latest = null;
+  for(const m of milestones){
+    if(!m.said && elapsed >= m.at){ m.said = true; latest = m; }
   }
+  if(latest) announce(latest.text, true);
 
-  if(remainingSeconds === 60 && !announced.has('1before')){
-    announced.add('1before');
-    speak('1 minute to go');
-    log('1 minute to go');
-  }
-
-  if(remainingSeconds <= 0){
-    clearInterval(timerInterval);
-    beep();
-    speak('Time is up. Stop recording now.');
-    log('Limit reached — stop recording');
+  if(remaining <= 0 && !done){
+    done = true;
+    clearInterval(tickTimer);
+    announce('Time is up. Stop recording now.', false);
     banner.textContent = 'TIME IS UP';
-    status.textContent = 'Stop recording now';
-    setTimeout(resetToSetup, 5000);
+    statusEl.textContent = 'Stop recording now';
+    releaseAwake();
+    setTimeout(backToSetup, 6000);
   }
 }
 
-function updateDisplay(){
-  const m = Math.floor(Math.max(remainingSeconds,0) / 60);
-  const s = Math.max(remainingSeconds,0) % 60;
-  display.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-}
-
-// Back to setup. The mic stays OFF until the user presses Arm & Listen.
-function resetToSetup(){
-  sessionActive = false;
+function backToSetup(){
+  countTimers.forEach(clearTimeout);
+  countTimers = [];
+  clearInterval(tickTimer);
+  releaseAwake();
   runView.style.display = 'none';
+  countView.style.display = 'none';
   setupView.style.display = 'block';
-  stopListening();
 }
 
-cancelBtn.addEventListener('click', () => {
-  clearInterval(timerInterval);
+$('cancelBtn').addEventListener('click', () => {
+  done = true;
   try{ window.speechSynthesis.cancel(); }catch(e){}
   log('Session cancelled');
-  resetToSetup();
+  backToSetup();
 });
 
-manualType.addEventListener('keydown', (e) => {
-  if(e.key === 'Enter'){
-    prepAudio();
-    const typed = normalize(manualType.value);
-    const target = normalize(commandInput.value);
-    manualType.value = '';
-    if(typed.length > 0 && target.length > 0 && typed.includes(target)){
-      startSession();
-    } else if(typed.length > 0){
-      log('Typed text does not match the start command');
-    }
-  }
-});
-
-armBtn.addEventListener('click', () => {
+$('testBtn').addEventListener('click', () => {
   prepAudio();
-  if(!armed){
-    startListening();
-  } else {
-    stopListening();
-  }
+  beep(880, 300);
+  speak('Sound check. Video started. 5 minutes completed.');
+  log('Sound test played');
 });
 
-function startListening(){
-  if(sessionActive) return;
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(!SpeechRecognition){
-    micLabel.textContent = 'Voice detection not supported in this browser — use Chrome/Edge or type the command';
-    return;
-  }
-  recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = false;
-  recognition.lang = 'en-US';
-
-  recognition.onresult = (event) => {
-    if(sessionActive || !armed) return;
-    const last = event.results[event.results.length - 1];
-    const said = normalize(last[0].transcript);
-    const target = normalize(commandInput.value);
-    log(`Heard: "${said}"`);
-    if(target.length > 0 && said.includes(target)){
-      startSession();
-    }
-  };
-
-  recognition.onerror = (e) => {
-    log(`Mic error: ${e.error}`);
-    if(e.error === 'network'){
-      micLabel.textContent = 'This browser cannot do voice detection (try Chrome or Edge)';
-      stopListening();
-      micLabel.textContent = 'This browser cannot do voice detection (try Chrome or Edge)';
-    } else if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
-      stopListening();
-      micLabel.textContent = 'Mic blocked — allow microphone access for this site';
-    }
-  };
-
-  recognition.onend = () => {
-    if(armed && !sessionActive){
-      try{ recognition.start(); }catch(err){}
-    }
-  };
-
-  try{
-    recognition.start();
-    armed = true;
-    micDot.classList.add('live');
-    micLabel.textContent = 'Listening — say your command to start';
-    armBtn.textContent = 'Stop Listening';
-  }catch(err){
-    log('Could not start mic: ' + err.message);
-  }
-}
-
-function stopListening(){
-  armed = false;
-  const r = recognition;
-  recognition = null;
-  if(r){
-    r.onresult = null;
-    r.onerror = null;
-    r.onend = null;
-    try{ r.abort(); }catch(err){}
-    try{ r.stop(); }catch(err){}
-  }
-  micDot.classList.remove('live');
-  micLabel.textContent = 'Mic is OFF';
-  armBtn.textContent = 'Arm & Listen';
-}
-
-// Load voices early so "Video started" can be spoken immediately.
 try{ window.speechSynthesis.getVoices(); }catch(e){}
 </script>
 
