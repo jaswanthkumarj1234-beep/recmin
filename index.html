@@ -145,7 +145,7 @@
 
 <div class="card">
   <h1>Record Minutes Timer</h1>
-  <div class="sub">Set your length and command, then trigger it to start.</div>
+  <div class="sub">Set your length and command, then say it to start.</div>
 
   <div id="setupView">
     <label for="minutes">Video length (minutes)</label>
@@ -156,18 +156,19 @@
 
     <div class="mic-row">
       <div class="mic-dot" id="micDot"></div>
-      <div class="mic-label" id="micLabel">Mic listening for your command</div>
+      <div class="mic-label" id="micLabel">Mic is off</div>
     </div>
 
     <button class="btn btn-primary" id="armBtn">Arm &amp; Listen</button>
 
     <div class="hint">
-      Say your command out loud, or type it below and press Start manually.
-      Once the timer begins, the app stops listening entirely — nothing you
-      say during recording can affect it.
+      Press Arm &amp; Listen, then say your command. The app replies
+      "Video started" and the mic switches off completely. It never
+      listens during recording or after it ends. Press Arm &amp; Listen
+      again for the next video.
     </div>
 
-    <label for="manualType" style="margin-top:20px;">Or type the command to trigger instantly</label>
+    <label for="manualType" style="margin-top:20px;">Or type the command and press Enter</label>
     <input type="text" id="manualType" placeholder="Type command and press Enter">
   </div>
 
@@ -196,6 +197,7 @@ const logEl = document.getElementById('log');
 
 let recognition = null;
 let armed = false;
+let sessionActive = false;
 let timerInterval = null;
 let totalSeconds = 0;
 let remainingSeconds = 0;
@@ -221,22 +223,30 @@ function normalize(s){
 }
 
 function startSession(){
-  if(armed){
-    stopListening();
-  }
+  if(sessionActive) return;
+
   const mins = parseFloat(minutesInput.value);
   if(!mins || mins <= 0){
     alert('Enter a valid number of minutes first.');
     return;
   }
+
+  // Mic off for good before anything else happens.
+  sessionActive = true;
+  stopListening();
+
   totalSeconds = Math.round(mins * 60);
   remainingSeconds = totalSeconds;
   announced = new Set();
   setupView.style.display = 'none';
   runView.style.display = 'block';
   status.textContent = 'Recording in progress';
-  log(`Session started — target ${mins} min`);
+  log(`Command understood — video started, target ${mins} min`);
   updateDisplay();
+
+  window.speechSynthesis.cancel();
+  speak('Video started');
+
   timerInterval = setInterval(tick, 1000);
 }
 
@@ -275,14 +285,17 @@ function updateDisplay(){
   display.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
+// Back to the setup screen. The mic stays OFF until the user presses Arm & Listen.
 function resetToSetup(){
+  sessionActive = false;
   runView.style.display = 'none';
   setupView.style.display = 'block';
-  startListening();
+  stopListening();
 }
 
 cancelBtn.addEventListener('click', () => {
   clearInterval(timerInterval);
+  window.speechSynthesis.cancel();
   log('Session cancelled');
   resetToSetup();
 });
@@ -290,9 +303,12 @@ cancelBtn.addEventListener('click', () => {
 manualType.addEventListener('keydown', (e) => {
   if(e.key === 'Enter'){
     const typed = normalize(manualType.value);
-    if(typed.length > 0){
-      manualType.value = '';
+    const target = normalize(commandInput.value);
+    manualType.value = '';
+    if(typed.length > 0 && target.length > 0 && typed.includes(target)){
       startSession();
+    } else if(typed.length > 0){
+      log('Typed text does not match the start command');
     }
   }
 });
@@ -306,6 +322,7 @@ armBtn.addEventListener('click', () => {
 });
 
 function startListening(){
+  if(sessionActive) return;
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if(!SpeechRecognition){
     micLabel.textContent = 'Voice detection not supported in this browser — type command instead';
@@ -317,21 +334,25 @@ function startListening(){
   recognition.lang = 'en-US';
 
   recognition.onresult = (event) => {
+    if(sessionActive || !armed) return;
     const last = event.results[event.results.length - 1];
     const said = normalize(last[0].transcript);
     const target = normalize(commandInput.value);
     log(`Heard: "${said}"`);
-    if(said.includes(target) && target.length > 0){
+    if(target.length > 0 && said.includes(target)){
       startSession();
     }
   };
 
   recognition.onerror = (e) => {
     log(`Mic error: ${e.error}`);
+    if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      stopListening();
+    }
   };
 
   recognition.onend = () => {
-    if(armed){
+    if(armed && !sessionActive){
       try{ recognition.start(); }catch(err){}
     }
   };
@@ -350,11 +371,14 @@ function startListening(){
 function stopListening(){
   armed = false;
   if(recognition){
+    recognition.onresult = null;
+    recognition.onerror = null;
     recognition.onend = null;
-    recognition.stop();
+    try{ recognition.abort(); }catch(err){}
+    recognition = null;
   }
   micDot.classList.remove('live');
-  micLabel.textContent = 'Mic listening for your command';
+  micLabel.textContent = 'Mic is off';
   armBtn.textContent = 'Arm & Listen';
 }
 </script>
