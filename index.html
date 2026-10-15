@@ -66,23 +66,22 @@
 <body>
 
 <div class="card">
-  <div class="ver">v4</div>
+  <div class="ver">v5</div>
   <h1>Record Minutes Timer</h1>
-  <div class="sub">No microphone. Press Start and it counts you in.</div>
+  <div class="sub">Say your command or press Start. It announces your progress by voice.</div>
 
   <div id="setupView">
     <label for="minutes">Video length (minutes)</label>
     <input type="number" id="minutes" min="1" value="23">
 
-    <button class="btn btn-primary" id="startBtn">Start — 3, 2, 1</button>
+    <label for="command">Start command</label>
+    <input type="text" id="command" value="3 2 1 start" placeholder="e.g. 3 2 1 start">
+    <div class="status" id="micLabel" style="margin:10px 0;">Mic is OFF</div>
+    <button class="btn btn-primary" id="armBtn">Arm &amp; Listen</button>
+    <button class="btn btn-secondary" id="startBtn">Start now (button, with 3-2-1)</button>
     <button class="btn btn-secondary" id="testBtn">Test sound</button>
 
-    <div class="hint">
-      Press Start. The app says "3, 2, 1, start" and "Video started", then
-      announces every 5 minutes, "1 minute to go", and "Time is up".
-      Keep this tab open and the screen on. Press Test sound first to
-      check your volume.
-    </div>
+    <div class="hint">Press Arm &amp; Listen, then say your command. The app says "Video started" and the mic switches OFF automatically. It never listens during recording. During the video it announces every 5 minutes, "1 minute to go", and "Time is up". Voice detection needs Chrome or Edge. Press Test sound first to check your volume.</div>
   </div>
 
   <div id="countView" style="display:none;">
@@ -206,7 +205,7 @@ function buildMilestones(total){
 }
 
 // ---- Start: spoken countdown, no microphone anywhere ----
-$('startBtn').addEventListener('click', () => {
+function startSession(skipCountdown){
   const mins = parseFloat(minutesInput.value);
   if(!mins || mins <= 0){
     alert('Enter a valid number of minutes first.');
@@ -219,6 +218,8 @@ $('startBtn').addEventListener('click', () => {
   milestones = buildMilestones(totalSeconds);
 
   setupView.style.display = 'none';
+  stopListening();
+  if(skipCountdown){ beginRecording(); return; }
   countView.style.display = 'block';
 
   try{ window.speechSynthesis.cancel(); }catch(e){}
@@ -231,7 +232,8 @@ $('startBtn').addEventListener('click', () => {
     }, delay));
   });
   countTimers.push(setTimeout(beginRecording, 3000));
-});
+}
+$('startBtn').addEventListener('click', () => startSession(false));
 
 function beginRecording(){
   countView.style.display = 'none';
@@ -272,6 +274,7 @@ function tick(){
 }
 
 function backToSetup(){
+  stopListening();
   countTimers.forEach(clearTimeout);
   countTimers = [];
   clearInterval(tickTimer);
@@ -294,6 +297,83 @@ $('testBtn').addEventListener('click', () => {
   speak('Sound check. Video started. 5 minutes completed.');
   log('Sound test played');
 });
+
+
+// ---- Voice command: mic is ON only while armed, OFF once recording starts ----
+const commandInput = $('command');
+const micLabel = $('micLabel');
+const armBtn = $('armBtn');
+let recognition = null;
+let armed = false;
+
+function normalize(t){
+  const words = {zero:'0', one:'1', two:'2', three:'3', four:'4', five:'5', six:'6', seven:'7', eight:'8', nine:'9'};
+  let x = String(t).toLowerCase();
+  x = x.replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine)\b/g, (w) => words[w]);
+  return x.replace(/[^a-z0-9]/g, '');
+}
+
+armBtn.addEventListener('click', () => {
+  prepAudio();
+  if(armed){ stopListening(); } else { startListening(); }
+});
+
+function startListening(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){
+    micLabel.textContent = 'Voice not supported here. Use Chrome or Edge, or press Start now.';
+    return;
+  }
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  recognition.onresult = (event) => {
+    if(!armed) return;
+    const target = normalize(commandInput.value);
+    for(let i = event.resultIndex; i < event.results.length; i++){
+      const said = normalize(event.results[i][0].transcript);
+      if(target.length > 0 && said.includes(target)){
+        log('Command heard');
+        startSession(true);
+        return;
+      }
+    }
+  };
+  recognition.onerror = (e) => {
+    log('Mic error: ' + e.error);
+    if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+      stopListening();
+      micLabel.textContent = 'Mic blocked. Allow microphone access for this site.';
+    }
+  };
+  recognition.onend = () => {
+    if(armed){ try{ recognition.start(); }catch(err){} }
+  };
+
+  try{
+    recognition.start();
+    armed = true;
+    micLabel.textContent = 'Listening. Say your command to start.';
+    armBtn.textContent = 'Stop Listening';
+  }catch(err){
+    log('Could not start mic: ' + err.message);
+  }
+}
+
+function stopListening(){
+  armed = false;
+  const r = recognition;
+  recognition = null;
+  if(r){
+    r.onresult = null; r.onerror = null; r.onend = null;
+    try{ r.abort(); }catch(err){}
+    try{ r.stop(); }catch(err){}
+  }
+  micLabel.textContent = 'Mic is OFF';
+  armBtn.textContent = 'Arm & Listen';
+}
 
 try{ window.speechSynthesis.getVoices(); }catch(e){}
 </script>
