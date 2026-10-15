@@ -66,9 +66,9 @@
 <body>
 
 <div class="card">
-  <div class="ver">v5</div>
+  <div class="ver">v6</div>
   <h1>Record Minutes Timer</h1>
-  <div class="sub">Say your command or press Start. It announces your progress by voice.</div>
+  <div class="sub">Counts up while you record. Works with the tab in the background.</div>
 
   <div id="setupView">
     <label for="minutes">Video length (minutes)</label>
@@ -81,7 +81,7 @@
     <button class="btn btn-secondary" id="startBtn">Start now (button, with 3-2-1)</button>
     <button class="btn btn-secondary" id="testBtn">Test sound</button>
 
-    <div class="hint">Press Arm &amp; Listen, then say your command. The app says "Video started" and the mic switches OFF automatically. It never listens during recording. During the video it announces every 5 minutes, "1 minute to go", and "Time is up". Voice detection needs Chrome or Edge. Press Test sound first to check your volume.</div>
+    <div class="hint">Press Start (or arm the voice command in Chrome or Edge). It says "Video started" and the timer counts UP. It announces 5, 10, 15, 20 minutes and so on, then "1 minute to go" and "Time is up". Keep the tab open; it can sit in the background. Keep the device volume up and not muted. Press Test sound first.</div>
   </div>
 
   <div id="countView" style="display:none;">
@@ -143,7 +143,7 @@ function beep(freq, ms){
     const g = audioCtx.createGain();
     o.type = 'sine';
     o.frequency.value = freq || 880;
-    g.gain.value = 0.2;
+    g.gain.value = 0.6;
     o.connect(g); g.connect(audioCtx.destination);
     o.start();
     o.stop(audioCtx.currentTime + (ms || 250) / 1000);
@@ -235,25 +235,76 @@ function startSession(skipCountdown){
 }
 $('startBtn').addEventListener('click', () => startSession(false));
 
+
+// ---- Background-proof ticking ----
+let worker = null;
+let keepOsc = null;
+
+function startTicker(){
+  stopTicker();
+  try{
+    const code = 'setInterval(function(){ postMessage(1); }, 250);';
+    const url = URL.createObjectURL(new Blob([code], {type: 'application/javascript'}));
+    worker = new Worker(url);
+    worker.onmessage = tick;
+  }catch(e){
+    worker = null;
+    tickTimer = setInterval(tick, 500);
+  }
+}
+function stopTicker(){
+  try{ if(worker){ worker.terminate(); worker = null; } }catch(e){}
+  if(tickTimer){ clearInterval( tickTimer ); tickTimer = null; }
+}
+
+// A near-silent tone keeps the tab marked as "playing audio" so the
+// browser does not throttle it while it sits in the background.
+function startKeepAlive(){
+  try{
+    prepAudio();
+    if(!audioCtx || keepOsc) return;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.value = 50;
+    g.gain.value = 0.002;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start();
+    keepOsc = o;
+  }catch(e){}
+}
+function stopKeepAlive(){
+  try{ if(keepOsc){ keepOsc.stop(); keepOsc = null; } }catch(e){}
+}
+
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible' && startTime && !done && runView.style.display === 'block'){
+    keepAwake();
+    tick();
+  }
+});
+
 function beginRecording(){
   countView.style.display = 'none';
   runView.style.display = 'block';
   banner.textContent = 'VIDEO STARTED';
   statusEl.textContent = 'Recording in progress';
   startTime = Date.now();
-  display.textContent = fmt(totalSeconds);
+  display.textContent = fmt(0);
   speak('Start. Video started.');
   beep(990, 400);
   log(`Video started — target ${totalSeconds / 60} min`);
   setTimeout(() => { if(!done) banner.textContent = 'RECORDING'; }, 4000);
   // Real-clock based, so throttled background timers cannot drift or skip.
-  tickTimer = setInterval(tick, 500);
+  startKeepAlive();
+  startTicker();
 }
 
 function tick(){
   const elapsed = Math.floor((Date.now() - startTime) / 1000);
   const remaining = totalSeconds - elapsed;
-  display.textContent = fmt(remaining);
+  display.textContent = fmt(Math.min(elapsed, totalSeconds));
+  if(!done) statusEl.textContent = 'Recording. Target ' + fmt(totalSeconds);
 
   // Say the most recent milestone we have passed (catches up after throttling).
   let latest = null;
@@ -264,7 +315,7 @@ function tick(){
 
   if(remaining <= 0 && !done){
     done = true;
-    clearInterval(tickTimer);
+    stopTicker();
     announce('Time is up. Stop recording now.', false);
     banner.textContent = 'TIME IS UP';
     statusEl.textContent = 'Stop recording now';
@@ -275,9 +326,10 @@ function tick(){
 
 function backToSetup(){
   stopListening();
+  stopKeepAlive();
   countTimers.forEach(clearTimeout);
   countTimers = [];
-  clearInterval(tickTimer);
+  stopTicker();
   releaseAwake();
   runView.style.display = 'none';
   countView.style.display = 'none';
@@ -373,6 +425,13 @@ function stopListening(){
   }
   micLabel.textContent = 'Mic is OFF';
   armBtn.textContent = 'Arm & Listen';
+}
+
+if(navigator.brave){
+  micLabel.textContent = 'Brave does not support voice commands. Use the Start button.';
+  armBtn.disabled = true;
+  armBtn.style.opacity = '0.4';
+  $('startBtn').className = 'btn btn-primary';
 }
 
 try{ window.speechSynthesis.getVoices(); }catch(e){}
