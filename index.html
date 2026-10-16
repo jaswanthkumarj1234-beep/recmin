@@ -66,7 +66,7 @@
 <body>
 
 <div class="card">
-  <div class="ver">v14</div>
+  <div class="ver">v15</div>
   <h1>Record Minutes Timer</h1>
   <div class="sub">Counts up while you record. Works with the tab in the background.</div>
 
@@ -350,7 +350,7 @@ function notify(text, pattern){
     if(!swReg || !('Notification' in window) || Notification.permission !== 'granted') return;
     swReg.showNotification(text, {
       body: 'Record Minutes Timer',
-      tag: 'recmin',
+      tag: 'recmin-' + text,
       renotify: true,
       silent: false,
       vibrate: (vibOn.checked && pattern) ? pattern : []
@@ -550,11 +550,15 @@ function tick(){
   if(!done) statusEl.textContent = 'Recording. Target ' + fmt(totalSeconds);
 
   // Say the most recent milestone we have passed (catches up after throttling).
-  let latest = null;
+  const missed = [];
   for(const m of milestones){
-    if(!m.said && elapsed >= m.at){ m.said = true; latest = m; }
+    if(!m.said && elapsed >= m.at){ m.said = true; missed.push(m); }
   }
-  if(latest) announce(latest.text, true);
+  missed.forEach((m, i) => {
+    const late = elapsed - m.at;
+    if(late > 5) log('Catch-up: ' + m.text + ' was ' + late + ' s late (timer was paused in background)');
+    announce(m.text, i === missed.length - 1);
+  });
 
   if(remaining <= 0 && !done){
     done = true;
