@@ -66,7 +66,7 @@
 <body>
 
 <div class="card">
-  <div class="ver">v12</div>
+  <div class="ver">v13</div>
   <h1>Record Minutes Timer</h1>
   <div class="sub">Counts up while you record. Works with the tab in the background.</div>
 
@@ -74,14 +74,20 @@
     <label for="minutes">Video length (minutes)</label>
     <input type="number" id="minutes" min="1" max="180" value="23">
 
+    <label for="cdSecs">Start countdown (seconds, 3 to 30)</label>
+    <input type="number" id="cdSecs" min="3" max="30" value="10">
+
+    <label style="display:flex;align-items:center;gap:8px;margin-top:16px;color:var(--white);"><input type="checkbox" id="vibOn" checked> Vibration</label>
+    <div class="status" id="vibNote" style="text-align:left;margin:4px 0 0;"></div>
+
     <label for="command">Start command</label>
     <input type="text" id="command" value="3 2 1 start" placeholder="e.g. 3 2 1 start">
     <div class="status" id="micLabel" style="margin:10px 0;">Mic is OFF</div>
     <button class="btn btn-primary" id="armBtn">Arm &amp; Listen</button>
-    <button class="btn btn-secondary" id="startBtn">Start now (button, with 10-second countdown)</button>
+    <button class="btn btn-secondary" id="startBtn">Start now (button, with countdown)</button>
     <button class="btn btn-secondary" id="testBtn">Test sound</button>
 
-    <div class="hint">Press Start (or arm the voice command; in Brave it uses a small offline voice model, about 40 MB the first time). After a spoken 10-second countdown (10, 9, 8 ...) it says "Video started" and the timer counts UP. It announces 5, 10, 15, 20 minutes and so on, then "1 minute to go" and "Time is up". Keep the tab open; it can sit in the background. Keep the device volume up and not muted. Press Test sound first.</div>
+    <div class="hint">Press Start (or arm the voice command; in Brave it uses a small offline voice model, about 40 MB the first time). After a spoken countdown (10 seconds by default, change it above) it says "Video started" and the timer counts UP. It announces 5, 10, 15, 20 minutes and so on, then "1 minute to go" and "Time is up". On phones that support it, each announcement also has its own vibration pattern: 1 pulse at 5 min, 2 at 10, 3 at 15, 4 at 20 (a long pulse is added for every further 20 minutes), three long buzzes for "1 minute to go", and a long-short-long pattern for "Time is up". Keep the tab open; it can sit in the background. Keep the device volume up and not muted. Press Test sound first.</div>
   </div>
 
   <div id="countView" style="display:none;">
@@ -171,6 +177,7 @@ function beep(freq, ms){
 // ---- Pre-recorded voice clips, played through Web Audio (same path as the beep) ----
 const CLIP_NAMES = ['start','c10','c9','c8','c7','c6','c5','c4','c3','c2','c1','one','done'];
 for(let m = 5; m <= 180; m += 5) CLIP_NAMES.push('m' + m);
+for(let n = 11; n <= 30; n++) CLIP_NAMES.push('c' + n);
 const clipBuf = {};
 let loadingPromise = null;
 const activeSrc = new Set();
@@ -178,7 +185,7 @@ let clipQueueEnd = 0;
 
 function clipFor(text){
   if(text === 'Start. Video started.') return 'start';
-  if(/^(10|[1-9])$/.test(text)) return 'c' + text;
+  if(/^([1-9]|[12][0-9]|30)$/.test(text)) return 'c' + text;
   if(text === '1 minute to go') return 'one';
   if(text.indexOf('Time is up') === 0) return 'done';
   const mm = /^(\d+) minutes completed$/.exec(text);
@@ -256,8 +263,37 @@ function speak(text, immediate){
   speakTTS(text);
 }
 
+// ---- Vibration: a different pattern for each kind of announcement ----
+const vibOn = $('vibOn');
+const vibNote = $('vibNote');
+const CAN_VIBRATE = typeof navigator.vibrate === 'function';
+vibNote.textContent = CAN_VIBRATE ? 'Vibration works while this page is visible.' : 'This device or browser cannot vibrate (most laptops cannot).';
+if(!CAN_VIBRATE) vibOn.disabled = true;
+
+function vib(p){
+  try{ if(CAN_VIBRATE && vibOn.checked) navigator.vibrate(p); }catch(e){}
+}
+// 5 min = 1 pulse, 10 = 2, 15 = 3, 20 = 4, then a long pulse is added for each further 20 minutes.
+function milestoneVib(min){
+  const k = Math.round(min / 5) - 1;
+  const cycle = Math.floor(k / 4);
+  const pulses = (k % 4) + 1;
+  const p = [];
+  for(let i = 0; i < cycle; i++){ p.push(450, 200); }
+  for(let i = 0; i < pulses; i++){ p.push(180); if(i < pulses - 1) p.push(120); }
+  return p;
+}
+function vibFor(text){
+  let m;
+  if(text === 'Start. Video started.') vib([700]);
+  else if(text === '1 minute to go') vib([500, 150, 500, 150, 500]);
+  else if(text.indexOf('Time is up') === 0) vib([1000, 250, 300, 250, 1000]);
+  else if((m = /^(\d+) minutes completed$/.exec(text))) vib(milestoneVib(parseInt(m[1], 10)));
+}
+
 function announce(text, showBanner){
   speak(text);
+  vibFor(text);
   log(text);
   if(showBanner){
     banner.textContent = text.toUpperCase();
@@ -299,6 +335,11 @@ function startSession(skipCountdown){
     alert('Enter a video length between 1 and 180 minutes.');
     return;
   }
+  let cd = parseInt($('cdSecs').value, 10);
+  if(!cd || cd < 3) cd = 3;
+  if(cd > 30) cd = 30;
+  $('cdSecs').value = cd;
+  saveSettings();
   prepAudio();
   keepAwake();
   done = false;
@@ -320,14 +361,15 @@ function startSession(skipCountdown){
     if(token !== sessionToken || done) return;
     $('countStatus').textContent = 'Get ready…';
     const steps = [];
-    for(let i = 10; i >= 1; i--) steps.push([String(i), (10 - i) * 1000]);
+    for(let i = cd; i >= 1; i--) steps.push([String(i), (cd - i) * 1000]);
     steps.forEach(([n, delay]) => {
       countTimers.push(setTimeout(() => {
         $('countNum').textContent = n;
         speak(n, true);
+        vib(parseInt(n, 10) <= 3 ? 150 : 40);
       }, delay));
     });
-    countTimers.push(setTimeout(beginRecording, 10000));
+    countTimers.push(setTimeout(beginRecording, cd * 1000));
   });
 }
 $('startBtn').addEventListener('click', () => startSession(false));
@@ -389,6 +431,7 @@ function beginRecording(){
   startTime = Date.now();
   display.textContent = fmt(0);
   speak('Start. Video started.');
+  vibFor('Start. Video started.');
   log(`Video started — target ${totalSeconds / 60} min`);
   setTimeout(() => { if(!done) banner.textContent = 'RECORDING'; }, 4000);
   // Real-clock based, so throttled background timers cannot drift or skip.
@@ -448,6 +491,7 @@ $('testBtn').addEventListener('click', () => {
   prepAudio();
   speak('Start. Video started.');
   speak('5 minutes completed');
+  vibFor('Start. Video started.');
   log('Sound test played');
 });
 
@@ -639,6 +683,17 @@ function stopListening(){
 }
 
 const USE_OFFLINE = /[?&]offline/.test(location.search) || !!navigator.brave || !(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+function saveSettings(){
+  try{ localStorage.setItem('recmin_settings', JSON.stringify({ m: minutesInput.value, c: $('cdSecs').value, v: vibOn.checked })); }catch(e){}
+}
+try{
+  const sv = JSON.parse(localStorage.getItem('recmin_settings') || '{}');
+  if(sv.m) minutesInput.value = sv.m;
+  if(sv.c) $('cdSecs').value = sv.c;
+  if(sv.v === false) vibOn.checked = false;
+}catch(e){}
+[minutesInput, $('cdSecs'), vibOn].forEach((el) => el.addEventListener('change', saveSettings));
 
 try{ window.speechSynthesis.getVoices(); }catch(e){}
 ensureCtx();
