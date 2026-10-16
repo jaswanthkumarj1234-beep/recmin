@@ -66,7 +66,7 @@
 <body>
 
 <div class="card">
-  <div class="ver">v6</div>
+  <div class="ver">v7</div>
   <h1>Record Minutes Timer</h1>
   <div class="sub">Counts up while you record. Works with the tab in the background.</div>
 
@@ -133,6 +133,7 @@ function prepAudio(){
       if(AC) audioCtx = new AC();
     }
     if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    loadClips();
   }catch(e){}
 }
 
@@ -150,7 +151,55 @@ function beep(freq, ms){
   }catch(e){}
 }
 
-function speak(text){
+// ---- Pre-recorded voice clips, played through Web Audio (same path as the beep) ----
+const CLIP_NAMES = ['start','c3','c2','c1','one','done'];
+for(let m = 5; m <= 120; m += 5) CLIP_NAMES.push('m' + m);
+const clipBuf = {};
+let clipsLoading = false;
+let clipQueueEnd = 0;
+
+function clipFor(text){
+  if(text === 'Start. Video started.') return 'start';
+  if(text === '3' || text === '2' || text === '1') return 'c' + text;
+  if(text === '1 minute to go') return 'one';
+  if(text.indexOf('Time is up') === 0) return 'done';
+  const mm = /^(\d+) minutes completed$/.exec(text);
+  if(mm) return 'm' + mm[1];
+  return null;
+}
+
+async function loadClips(){
+  if(clipsLoading || !audioCtx) return;
+  clipsLoading = true;
+  await Promise.all(CLIP_NAMES.map(async (n) => {
+    try{
+      const r = await fetch('clips/' + n + '.wav');
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      clipBuf[n] = await audioCtx.decodeAudioData(await r.arrayBuffer());
+    }catch(e){ log('Clip load failed: ' + n); }
+  }));
+  log('Voice clips ready (' + Object.keys(clipBuf).length + '/' + CLIP_NAMES.length + ')');
+}
+
+function playClip(name, immediate){
+  const buf = clipBuf[name];
+  if(!buf || !audioCtx) return false;
+  try{
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const g = audioCtx.createGain();
+    g.gain.value = 1;
+    src.connect(g); g.connect(audioCtx.destination);
+    const now = audioCtx.currentTime + 0.02;
+    const t = immediate ? now : Math.max(now, clipQueueEnd);
+    src.start(t);
+    clipQueueEnd = Math.max(clipQueueEnd, t + buf.duration + 0.15);
+    return true;
+  }catch(e){ return false; }
+}
+
+function speakTTS(text){
   try{
     const synth = window.speechSynthesis;
     if(!synth){ log('Speech not supported here'); return; }
@@ -167,9 +216,16 @@ function speak(text){
   }
 }
 
+// Clip first (reliable). Browser speech is only a fallback, with a beep so it is never silent.
+function speak(text, immediate){
+  const n = clipFor(text);
+  if(n && playClip(n, immediate)) return;
+  beep(880, 200);
+  speakTTS(text);
+}
+
 function announce(text, showBanner){
   speak(text);
-  beep(880, 200);
   log(text);
   if(showBanner){
     banner.textContent = text.toUpperCase();
@@ -227,8 +283,7 @@ function startSession(skipCountdown){
   steps.forEach(([n, delay]) => {
     countTimers.push(setTimeout(() => {
       $('countNum').textContent = n;
-      speak(n);
-      beep(660, 150);
+      speak(n, true);
     }, delay));
   });
   countTimers.push(setTimeout(beginRecording, 3000));
@@ -292,7 +347,6 @@ function beginRecording(){
   startTime = Date.now();
   display.textContent = fmt(0);
   speak('Start. Video started.');
-  beep(990, 400);
   log(`Video started — target ${totalSeconds / 60} min`);
   setTimeout(() => { if(!done) banner.textContent = 'RECORDING'; }, 4000);
   // Real-clock based, so throttled background timers cannot drift or skip.
@@ -345,8 +399,8 @@ $('cancelBtn').addEventListener('click', () => {
 
 $('testBtn').addEventListener('click', () => {
   prepAudio();
-  beep(880, 300);
-  speak('Sound check. Video started. 5 minutes completed.');
+  speak('Start. Video started.');
+  speak('5 minutes completed');
   log('Sound test played');
 });
 
