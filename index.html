@@ -66,7 +66,7 @@
 <body>
 
 <div class="card">
-  <div class="ver">v9</div>
+  <div class="ver">v10</div>
   <h1>Record Minutes Timer</h1>
   <div class="sub">Counts up while you record. Works with the tab in the background.</div>
 
@@ -81,7 +81,7 @@
     <button class="btn btn-secondary" id="startBtn">Start now (button, with 10-second countdown)</button>
     <button class="btn btn-secondary" id="testBtn">Test sound</button>
 
-    <div class="hint">Press Start (or arm the voice command in Chrome or Edge). After a spoken 10-second countdown (10, 9, 8 ...) it says "Video started" and the timer counts UP. It announces 5, 10, 15, 20 minutes and so on, then "1 minute to go" and "Time is up". Keep the tab open; it can sit in the background. Keep the device volume up and not muted. Press Test sound first.</div>
+    <div class="hint">Press Start (or arm the voice command; in Brave it uses a small offline voice model, about 40 MB the first time). After a spoken 10-second countdown (10, 9, 8 ...) it says "Video started" and the timer counts UP. It announces 5, 10, 15, 20 minutes and so on, then "1 minute to go" and "Time is up". Keep the tab open; it can sit in the background. Keep the device volume up and not muted. Press Test sound first.</div>
   </div>
 
   <div id="countView" style="display:none;">
@@ -472,6 +472,7 @@ armBtn.addEventListener('click', () => {
 });
 
 function startListening(){
+  if(USE_OFFLINE){ startOffline(); return; }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if(!SR){
     micLabel.textContent = 'Voice not supported here. Use Chrome or Edge, or press Start now.';
@@ -515,7 +516,99 @@ function startListening(){
   }
 }
 
+// ---- Offline voice command (Vosk in the browser). Used in Brave and anywhere native speech is missing. ----
+let voskModelP = null;
+let offline = null;
+let offlineToken = 0;
+
+function loadVoskLib(){
+  return new Promise((res, rej) => {
+    if(window.Vosk) return res();
+    const s = document.createElement('script');
+    s.src = 'vosk/vosk.js';
+    s.onload = () => res();
+    s.onerror = () => rej(new Error('could not load voice library'));
+    document.head.appendChild(s);
+  });
+}
+function getVoskModel(){
+  if(!voskModelP){
+    voskModelP = loadVoskLib().then(() => Vosk.createModel('vosk/model.tar.gz')).catch((e) => { voskModelP = null; throw e; });
+  }
+  return voskModelP;
+}
+function grammarFor(text){
+  const names = ['zero','one','two','three','four','five','six','seven','eight','nine'];
+  const w = String(text).toLowerCase().replace(/\d/g, (d) => ' ' + names[d] + ' ').replace(/[^a-z ]/g, ' ').split(/\s+/).filter(Boolean).join(' ');
+  return w ? JSON.stringify([w, '[unk]']) : null;
+}
+
+async function startOffline(){
+  armed = true;
+  armBtn.textContent = 'Stop Listening';
+  micLabel.textContent = 'Loading offline voice model (about 40 MB, first time only)…';
+  const mine = ++offlineToken;
+  try{
+    const model = await getVoskModel();
+    if(!armed || mine !== offlineToken) return;
+    micLabel.textContent = 'Allow the microphone when asked…';
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    if(!armed || mine !== offlineToken){ stream.getTracks().forEach((tr) => tr.stop()); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    try{ await ctx.resume(); }catch(e){}
+    const rate = ctx.sampleRate;
+    const g = grammarFor(commandInput.value);
+    let rec;
+    try{ rec = g ? new model.KaldiRecognizer(rate, g) : new model.KaldiRecognizer(rate); }
+    catch(e){ rec = new model.KaldiRecognizer(rate); }
+    // Keep the last few seconds of finished phrases, so "3 ... 2 ... 1 ... start" still matches with pauses.
+    let hist = [];
+    const feed = (txt, isFinal) => {
+      if(!armed) return;
+      const now = Date.now();
+      hist = hist.filter((h) => now - h.t < 8000);
+      const s = normalize(txt || '');
+      const joined = hist.map((h) => h.s).join('') + s;
+      const target = normalize(commandInput.value);
+      if(target.length > 0 && joined.includes(target)){
+        log('Command heard');
+        startSession(true);
+        return;
+      }
+      if(isFinal && s) hist.push({ t: now, s: s });
+    };
+    rec.on('result', (m) => feed(m && m.result && m.result.text, true));
+    rec.on('partialresult', (m) => feed(m && m.result && m.result.partial, false));
+    const src = ctx.createMediaStreamSource(stream);
+    const node = ctx.createScriptProcessor(4096, 1, 1);
+    node.onaudioprocess = (e) => { try{ rec.acceptWaveform(e.inputBuffer); }catch(err){} };
+    src.connect(node);
+    node.connect(ctx.destination);
+    offline = { stream, ctx, node, src, rec };
+    micLabel.textContent = 'Listening (offline). Say your command to start.';
+    log('Offline voice ready');
+  }catch(err){
+    log('Offline voice error: ' + (err && err.message ? err.message : err));
+    const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+    stopListening();
+    micLabel.textContent = denied ? 'Mic blocked. Allow microphone access for this site.' : 'Could not start offline voice. Use the Start button.';
+  }
+}
+
+function stopOffline(){
+  offlineToken++;
+  const o = offline;
+  offline = null;
+  if(!o) return;
+  try{ o.node.onaudioprocess = null; o.node.disconnect(); o.src.disconnect(); }catch(e){}
+  try{ o.stream.getTracks().forEach((tr) => tr.stop()); }catch(e){}
+  try{ o.ctx.close(); }catch(e){}
+  try{ o.rec.remove(); }catch(e){}
+}
+
 function stopListening(){
+  stopOffline();
   armed = false;
   const r = recognition;
   recognition = null;
@@ -528,12 +621,7 @@ function stopListening(){
   armBtn.textContent = 'Arm & Listen';
 }
 
-if(navigator.brave){
-  micLabel.textContent = 'Brave does not support voice commands. Use the Start button.';
-  armBtn.disabled = true;
-  armBtn.style.opacity = '0.4';
-  $('startBtn').className = 'btn btn-primary';
-}
+const USE_OFFLINE = /[?&]offline/.test(location.search) || !!navigator.brave || !(window.SpeechRecognition || window.webkitSpeechRecognition);
 
 try{ window.speechSynthesis.getVoices(); }catch(e){}
 ensureCtx();
