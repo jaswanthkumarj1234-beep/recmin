@@ -66,7 +66,7 @@
 <body>
 
 <div class="card">
-  <div class="ver">v11</div>
+  <div class="ver">v12</div>
   <h1>Record Minutes Timer</h1>
   <div class="sub">Counts up while you record. Works with the tab in the background.</div>
 
@@ -497,7 +497,13 @@ function startListening(){
   };
   recognition.onerror = (e) => {
     log('Mic error: ' + e.error);
-    if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+    if(e.error === 'network' || e.error === 'service-not-allowed' || e.error === 'language-not-supported' || e.error === 'audio-capture'){
+      log('Browser voice service unavailable, switching to offline voice');
+      stopListening();
+      startOffline();
+      return;
+    }
+    if(e.error === 'not-allowed'){
       stopListening();
       micLabel.textContent = 'Mic blocked. Allow microphone access for this site.';
     }
@@ -506,13 +512,24 @@ function startListening(){
     if(armed){ try{ recognition.start(); }catch(err){} }
   };
 
+  let nativeStarted = false;
+  recognition.onstart = () => { nativeStarted = true; };
   try{
     recognition.start();
     armed = true;
     micLabel.textContent = 'Listening. Say your command to start.';
     armBtn.textContent = 'Stop Listening';
+    const rr = recognition;
+    setTimeout(() => {
+      if(armed && recognition === rr && !nativeStarted){
+        log('Browser voice did not start, switching to offline voice');
+        stopListening();
+        startOffline();
+      }
+    }, 6000);
   }catch(err){
     log('Could not start mic: ' + err.message);
+    startOffline();
   }
 }
 
@@ -549,7 +566,7 @@ async function startOffline(){
   micLabel.textContent = 'Loading offline voice model (about 40 MB, first time only)…';
   const mine = ++offlineToken;
   try{
-    const model = await getVoskModel();
+    const model = await Promise.race([getVoskModel(), new Promise((_, rej) => setTimeout(() => rej(new Error('voice model took too long to load')), 90000))]);
     if(!armed || mine !== offlineToken) return;
     micLabel.textContent = 'Allow the microphone when asked…';
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
