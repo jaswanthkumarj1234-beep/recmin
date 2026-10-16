@@ -66,13 +66,13 @@
 <body>
 
 <div class="card">
-  <div class="ver">v8</div>
+  <div class="ver">v9</div>
   <h1>Record Minutes Timer</h1>
   <div class="sub">Counts up while you record. Works with the tab in the background.</div>
 
   <div id="setupView">
     <label for="minutes">Video length (minutes)</label>
-    <input type="number" id="minutes" min="1" value="23">
+    <input type="number" id="minutes" min="1" max="180" value="23">
 
     <label for="command">Start command</label>
     <input type="text" id="command" value="3 2 1 start" placeholder="e.g. 3 2 1 start">
@@ -81,12 +81,13 @@
     <button class="btn btn-secondary" id="startBtn">Start now (button, with 10-second countdown)</button>
     <button class="btn btn-secondary" id="testBtn">Test sound</button>
 
-    <div class="hint">Press Start (or arm the voice command in Chrome or Edge). It says "Video started" and the timer counts UP. It announces 5, 10, 15, 20 minutes and so on, then "1 minute to go" and "Time is up". Keep the tab open; it can sit in the background. Keep the device volume up and not muted. Press Test sound first.</div>
+    <div class="hint">Press Start (or arm the voice command in Chrome or Edge). After a spoken 10-second countdown (10, 9, 8 ...) it says "Video started" and the timer counts UP. It announces 5, 10, 15, 20 minutes and so on, then "1 minute to go" and "Time is up". Keep the tab open; it can sit in the background. Keep the device volume up and not muted. Press Test sound first.</div>
   </div>
 
   <div id="countView" style="display:none;">
     <div class="big" id="countNum">10</div>
-    <div class="status">Get ready…</div>
+    <div class="status" id="countStatus">Get ready…</div>
+    <button class="btn btn-secondary" id="cancelCountBtn">Cancel</button>
   </div>
 
   <div id="runView" style="display:none;">
@@ -118,6 +119,7 @@ let startTime = 0;
 let totalSeconds = 0;
 let milestones = [];
 let done = false;
+let sessionToken = 0;
 
 function log(msg){
   const d = document.createElement('div');
@@ -126,13 +128,28 @@ function log(msg){
 }
 
 // Must be called from a click so the browser allows sound afterwards.
-function prepAudio(){
+function ensureCtx(){
   try{
     if(!audioCtx){
       const AC = window.AudioContext || window.webkitAudioContext;
-      if(AC) audioCtx = new AC();
+      if(AC){
+        audioCtx = new AC();
+        audioCtx.onstatechange = () => {
+          if(audioCtx.state !== 'running' && startTime && !done && runView.style.display === 'block'){
+            try{ audioCtx.resume(); }catch(e){}
+          }
+        };
+      }
     }
-    if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }catch(e){}
+  return audioCtx;
+}
+
+// Must be called from a click so the browser allows sound afterwards.
+function prepAudio(){
+  try{
+    ensureCtx();
+    if(audioCtx && audioCtx.state !== 'running') audioCtx.resume();
     loadClips();
   }catch(e){}
 }
@@ -153,9 +170,10 @@ function beep(freq, ms){
 
 // ---- Pre-recorded voice clips, played through Web Audio (same path as the beep) ----
 const CLIP_NAMES = ['start','c10','c9','c8','c7','c6','c5','c4','c3','c2','c1','one','done'];
-for(let m = 5; m <= 120; m += 5) CLIP_NAMES.push('m' + m);
+for(let m = 5; m <= 180; m += 5) CLIP_NAMES.push('m' + m);
 const clipBuf = {};
-let clipsLoading = false;
+let loadingPromise = null;
+const activeSrc = new Set();
 let clipQueueEnd = 0;
 
 function clipFor(text){
@@ -168,24 +186,36 @@ function clipFor(text){
   return null;
 }
 
-async function loadClips(){
-  if(clipsLoading || !audioCtx) return;
-  clipsLoading = true;
-  await Promise.all(CLIP_NAMES.map(async (n) => {
+function loadClips(){
+  if(!audioCtx) return Promise.resolve();
+  if(loadingPromise) return loadingPromise;
+  const missing = CLIP_NAMES.filter(n => !clipBuf[n]);
+  if(!missing.length) return Promise.resolve();
+  loadingPromise = Promise.all(missing.map(async (n) => {
     try{
       const r = await fetch('clips/' + n + '.wav');
       if(!r.ok) throw new Error('HTTP ' + r.status);
       clipBuf[n] = await audioCtx.decodeAudioData(await r.arrayBuffer());
-    }catch(e){ log('Clip load failed: ' + n); }
-  }));
-  log('Voice clips ready (' + Object.keys(clipBuf).length + '/' + CLIP_NAMES.length + ')');
+    }catch(e){}
+  })).then(() => {
+    loadingPromise = null;
+    const have = CLIP_NAMES.filter(n => clipBuf[n]).length;
+    log('Voice clips ' + have + '/' + CLIP_NAMES.length + (have === CLIP_NAMES.length ? ' ready' : ' (some missing)'));
+  });
+  return loadingPromise;
+}
+
+function stopAllClips(){
+  activeSrc.forEach((s) => { try{ s.stop(); }catch(e){} });
+  activeSrc.clear();
+  clipQueueEnd = 0;
 }
 
 function playClip(name, immediate){
   const buf = clipBuf[name];
   if(!buf || !audioCtx) return false;
   try{
-    if(audioCtx.state === 'suspended') audioCtx.resume();
+    if(audioCtx.state !== 'running') audioCtx.resume();
     const src = audioCtx.createBufferSource();
     src.buffer = buf;
     const g = audioCtx.createGain();
@@ -193,8 +223,10 @@ function playClip(name, immediate){
     src.connect(g); g.connect(audioCtx.destination);
     const now = audioCtx.currentTime + 0.02;
     const t = immediate ? now : Math.max(now, clipQueueEnd);
+    activeSrc.add(src);
+    src.onended = () => activeSrc.delete(src);
     src.start(t);
-    clipQueueEnd = Math.max(clipQueueEnd, t + buf.duration + 0.15);
+    clipQueueEnd = Math.max(clipQueueEnd, t + buf.duration + 0.05);
     return true;
   }catch(e){ return false; }
 }
@@ -263,13 +295,15 @@ function buildMilestones(total){
 // ---- Start: spoken countdown, no microphone anywhere ----
 function startSession(skipCountdown){
   const mins = parseFloat(minutesInput.value);
-  if(!mins || mins <= 0){
-    alert('Enter a valid number of minutes first.');
+  if(!mins || mins <= 0 || mins > 180){
+    alert('Enter a video length between 1 and 180 minutes.');
     return;
   }
   prepAudio();
   keepAwake();
   done = false;
+  stopAllClips();
+  const token = ++sessionToken;
   totalSeconds = Math.round(mins * 60);
   milestones = buildMilestones(totalSeconds);
 
@@ -277,17 +311,24 @@ function startSession(skipCountdown){
   stopListening();
   if(skipCountdown){ beginRecording(); return; }
   countView.style.display = 'block';
-
+  $('countNum').textContent = '…';
+  $('countStatus').textContent = 'Loading voice…';
   try{ window.speechSynthesis.cancel(); }catch(e){}
-  const steps = [];
-  for(let i = 10; i >= 1; i--) steps.push([String(i), (10 - i) * 1000]);
-  steps.forEach(([n, delay]) => {
-    countTimers.push(setTimeout(() => {
-      $('countNum').textContent = n;
-      speak(n, true);
-    }, delay));
+
+  // Wait (max 5s) for the voice clips so the very first number is spoken, not beeped.
+  Promise.race([loadClips(), new Promise((r) => setTimeout(r, 5000))]).then(() => {
+    if(token !== sessionToken || done) return;
+    $('countStatus').textContent = 'Get ready…';
+    const steps = [];
+    for(let i = 10; i >= 1; i--) steps.push([String(i), (10 - i) * 1000]);
+    steps.forEach(([n, delay]) => {
+      countTimers.push(setTimeout(() => {
+        $('countNum').textContent = n;
+        speak(n, true);
+      }, delay));
+    });
+    countTimers.push(setTimeout(beginRecording, 10000));
   });
-  countTimers.push(setTimeout(beginRecording, 10000));
 }
 $('startBtn').addEventListener('click', () => startSession(false));
 
@@ -356,6 +397,7 @@ function beginRecording(){
 }
 
 function tick(){
+  if(audioCtx && audioCtx.state !== 'running'){ try{ audioCtx.resume(); }catch(e){} }
   const elapsed = Math.floor((Date.now() - startTime) / 1000);
   const remaining = totalSeconds - elapsed;
   display.textContent = fmt(Math.min(elapsed, totalSeconds));
@@ -393,10 +435,14 @@ function backToSetup(){
 
 $('cancelBtn').addEventListener('click', () => {
   done = true;
+  sessionToken++;
+  stopAllClips();
   try{ window.speechSynthesis.cancel(); }catch(e){}
   log('Session cancelled');
   backToSetup();
 });
+
+$('cancelCountBtn').addEventListener('click', () => $('cancelBtn').click());
 
 $('testBtn').addEventListener('click', () => {
   prepAudio();
@@ -490,6 +536,8 @@ if(navigator.brave){
 }
 
 try{ window.speechSynthesis.getVoices(); }catch(e){}
+ensureCtx();
+loadClips();
 </script>
 
 </body>
