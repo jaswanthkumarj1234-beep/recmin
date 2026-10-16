@@ -66,7 +66,7 @@
 <body>
 
 <div class="card">
-  <div class="ver">v13</div>
+  <div class="ver">v14</div>
   <h1>Record Minutes Timer</h1>
   <div class="sub">Counts up while you record. Works with the tab in the background.</div>
 
@@ -85,9 +85,9 @@
     <div class="status" id="micLabel" style="margin:10px 0;">Mic is OFF</div>
     <button class="btn btn-primary" id="armBtn">Arm &amp; Listen</button>
     <button class="btn btn-secondary" id="startBtn">Start now (button, with countdown)</button>
-    <button class="btn btn-secondary" id="testBtn">Test sound</button>
+    <button class="btn btn-secondary" id="testBtn">Test sound + background alert</button>
 
-    <div class="hint">Press Start (or arm the voice command; in Brave it uses a small offline voice model, about 40 MB the first time). After a spoken countdown (10 seconds by default, change it above) it says "Video started" and the timer counts UP. It announces 5, 10, 15, 20 minutes and so on, then "1 minute to go" and "Time is up". On phones that support it, each announcement also has its own vibration pattern: 1 pulse at 5 min, 2 at 10, 3 at 15, 4 at 20 (a long pulse is added for every further 20 minutes), three long buzzes for "1 minute to go", and a long-short-long pattern for "Time is up". Keep the tab open; it can sit in the background. Keep the device volume up and not muted. Press Test sound first.</div>
+    <div class="hint">Press Start (or arm the voice command; in Brave it uses a small offline voice model, about 40 MB the first time). After a spoken countdown (10 seconds by default, change it above) it says "Video started" and the timer counts UP. It announces 5, 10, 15, 20 minutes and so on, then "1 minute to go" and "Time is up". On phones that support it, each announcement also has its own vibration pattern: 1 pulse at 5 min, 2 at 10, 3 at 15, 4 at 20 (a long pulse is added for every further 20 minutes), three long buzzes for "1 minute to go", and a long-short-long pattern for "Time is up". Keep the tab open; it can sit in the background. If the page is hidden (screen off, or another app such as the camera is in front) the announcement and vibration are also sent as a phone notification, so tap Allow when asked for notifications. Keep the device volume up and not muted. Press Test sound first.</div>
   </div>
 
   <div id="countView" style="display:none;">
@@ -179,6 +179,7 @@ const CLIP_NAMES = ['start','c10','c9','c8','c7','c6','c5','c4','c3','c2','c1','
 for(let m = 5; m <= 180; m += 5) CLIP_NAMES.push('m' + m);
 for(let n = 11; n <= 30; n++) CLIP_NAMES.push('c' + n);
 const clipBuf = {};
+const clipUrl = {};
 let loadingPromise = null;
 const activeSrc = new Set();
 let clipQueueEnd = 0;
@@ -202,7 +203,9 @@ function loadClips(){
     try{
       const r = await fetch('clips/' + n + '.wav');
       if(!r.ok) throw new Error('HTTP ' + r.status);
-      clipBuf[n] = await audioCtx.decodeAudioData(await r.arrayBuffer());
+      const ab = await r.arrayBuffer();
+      try{ clipUrl[n] = URL.createObjectURL(new Blob([ab.slice(0)], {type: 'audio/wav'})); }catch(e){}
+      clipBuf[n] = await audioCtx.decodeAudioData(ab);
     }catch(e){}
   })).then(() => {
     loadingPromise = null;
@@ -256,9 +259,27 @@ function speakTTS(text){
 }
 
 // Clip first (reliable). Browser speech is only a fallback, with a beep so it is never silent.
+// Plain <audio> playback: used when the Web Audio context is not running (page hidden, other app in front).
+function playClipEl(name){
+  const u = clipUrl[name];
+  if(!u) return false;
+  try{
+    const a = new Audio(u);
+    a.volume = 1;
+    const pr = a.play();
+    if(pr && pr.catch) pr.catch(() => {});
+    return true;
+  }catch(e){ return false; }
+}
+
 function speak(text, immediate){
   const n = clipFor(text);
-  if(n && playClip(n, immediate)) return;
+  if(n){
+    if(audioCtx && audioCtx.state === 'running' && playClip(n, immediate)) return;
+    if(audioCtx && audioCtx.state !== 'running'){ try{ audioCtx.resume(); }catch(e){} }
+    if(playClipEl(n)) return;
+    if(playClip(n, immediate)) return;
+  }
   beep(880, 200);
   speakTTS(text);
 }
@@ -283,18 +304,65 @@ function milestoneVib(min){
   for(let i = 0; i < pulses; i++){ p.push(180); if(i < pulses - 1) p.push(120); }
   return p;
 }
-function vibFor(text){
+function vibPatternFor(text){
   let m;
-  if(text === 'Start. Video started.') vib([700]);
-  else if(text === '1 minute to go') vib([500, 150, 500, 150, 500]);
-  else if(text.indexOf('Time is up') === 0) vib([1000, 250, 300, 250, 1000]);
-  else if((m = /^(\d+) minutes completed$/.exec(text))) vib(milestoneVib(parseInt(m[1], 10)));
+  if(text === 'Start. Video started.') return [700];
+  if(text === '1 minute to go') return [500, 150, 500, 150, 500];
+  if(text.indexOf('Time is up') === 0) return [1000, 250, 300, 250, 1000];
+  if((m = /^(\d+) minutes completed$/.exec(text))) return milestoneVib(parseInt(m[1], 10));
+  return null;
+}
+function vibFor(text){
+  const p = vibPatternFor(text);
+  if(p) vib(p);
+}
+
+// ---- Background alerts: a page cannot vibrate or be heard reliably while hidden, a phone notification can ----
+let swReg = null;
+function noteText(){
+  let s = CAN_VIBRATE ? 'Vibration works while this page is visible.' : 'This device or browser cannot vibrate (most laptops cannot).';
+  if('Notification' in window){
+    const p = Notification.permission;
+    s += ' Background alerts: ' + (p === 'granted' ? 'ON' : (p === 'denied' ? 'blocked in browser site settings' : 'will ask when you press Start')) + '.';
+  }else{
+    s += ' Background alerts are not supported here.';
+  }
+  return s;
+}
+vibNote.textContent = noteText();
+function askNotify(){
+  try{
+    if('Notification' in window && Notification.permission === 'default'){
+      const p = Notification.requestPermission(() => { vibNote.textContent = noteText(); });
+      if(p && p.then) p.then(() => { vibNote.textContent = noteText(); });
+    }
+  }catch(e){}
+}
+async function initSW(){
+  try{
+    if('serviceWorker' in navigator){
+      swReg = await navigator.serviceWorker.register('sw.js');
+    }
+  }catch(e){ log('Background alerts unavailable: ' + e.message); }
+}
+function notify(text, pattern){
+  try{
+    if(!swReg || !('Notification' in window) || Notification.permission !== 'granted') return;
+    swReg.showNotification(text, {
+      body: 'Record Minutes Timer',
+      tag: 'recmin',
+      renotify: true,
+      silent: false,
+      vibrate: (vibOn.checked && pattern) ? pattern : []
+    });
+  }catch(e){}
 }
 
 function announce(text, showBanner){
   speak(text);
   vibFor(text);
-  log(text);
+  if(document.visibilityState === 'hidden') notify(text, vibPatternFor(text));
+  log(text + ' [audio ' + (audioCtx ? audioCtx.state : 'none') + ', page ' + document.visibilityState + ']');
   if(showBanner){
     banner.textContent = text.toUpperCase();
     setTimeout(() => { if(!done) banner.textContent = 'RECORDING'; }, 4000);
@@ -341,6 +409,8 @@ function startSession(skipCountdown){
   $('cdSecs').value = cd;
   saveSettings();
   prepAudio();
+  startKeepEl();
+  askNotify();
   keepAwake();
   done = false;
   stopAllClips();
@@ -396,6 +466,38 @@ function stopTicker(){
   if(tickTimer){ clearInterval( tickTimer ); tickTimer = null; }
 }
 
+// A looping, practically silent <audio> element: phones keep a page alive (and its sound allowed)
+// while it counts as playing media, even with the screen off or another app in front.
+let keepEl = null;
+function silentWavUrl(){
+  const sr = 8000, n = sr * 2;
+  const buf = new ArrayBuffer(44 + n * 2);
+  const v = new DataView(buf);
+  const w = (o, s) => { for(let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, n * 2, true);
+  for(let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.round(Math.sin(2 * Math.PI * 30 * i / sr) * 60), true);
+  return URL.createObjectURL(new Blob([buf], {type: 'audio/wav'}));
+}
+function startKeepEl(){
+  try{
+    if(keepEl) return;
+    keepEl = new Audio(silentWavUrl());
+    keepEl.loop = true;
+    keepEl.volume = 1;
+    const pr = keepEl.play();
+    if(pr && pr.catch) pr.catch(() => { log('Background keep-alive could not start'); keepEl = null; });
+    if('mediaSession' in navigator){
+      try{ navigator.mediaSession.metadata = new MediaMetadata({ title: 'Recording timer running', artist: 'Record Minutes Timer' }); }catch(e){}
+    }
+  }catch(e){ keepEl = null; }
+}
+function stopKeepEl(){
+  try{ if(keepEl){ keepEl.pause(); keepEl = null; } }catch(e){}
+}
+
 // A near-silent tone keeps the tab marked as "playing audio" so the
 // browser does not throttle it while it sits in the background.
 function startKeepAlive(){
@@ -414,6 +516,7 @@ function startKeepAlive(){
 }
 function stopKeepAlive(){
   try{ if(keepOsc){ keepOsc.stop(); keepOsc = null; } }catch(e){}
+  stopKeepEl();
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -489,10 +592,15 @@ $('cancelCountBtn').addEventListener('click', () => $('cancelBtn').click());
 
 $('testBtn').addEventListener('click', () => {
   prepAudio();
+  askNotify();
+  startKeepEl();
   speak('Start. Video started.');
-  speak('5 minutes completed');
   vibFor('Start. Video started.');
-  log('Sound test played');
+  log('Test: in 6 seconds a 5-minute alert fires. Switch to another app or lock the screen now to test the background path.');
+  setTimeout(() => { announce('5 minutes completed', false); }, 6000);
+  setTimeout(() => {
+    if(runView.style.display !== 'block' && countView.style.display !== 'block') stopKeepEl();
+  }, 14000);
 });
 
 
@@ -512,6 +620,7 @@ function normalize(t){
 
 armBtn.addEventListener('click', () => {
   prepAudio();
+  askNotify();
   if(armed){ stopListening(); } else { startListening(); }
 });
 
@@ -698,6 +807,7 @@ try{
 try{ window.speechSynthesis.getVoices(); }catch(e){}
 ensureCtx();
 loadClips();
+initSW();
 </script>
 
 </body>
