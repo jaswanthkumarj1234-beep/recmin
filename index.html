@@ -66,7 +66,7 @@
 <body>
 
 <div class="card">
-  <div class="ver">v7</div>
+  <div class="ver">v8</div>
   <h1>Record Minutes Timer</h1>
   <div class="sub">Counts up while you record. Works with the tab in the background.</div>
 
@@ -78,14 +78,14 @@
     <input type="text" id="command" value="3 2 1 start" placeholder="e.g. 3 2 1 start">
     <div class="status" id="micLabel" style="margin:10px 0;">Mic is OFF</div>
     <button class="btn btn-primary" id="armBtn">Arm &amp; Listen</button>
-    <button class="btn btn-secondary" id="startBtn">Start now (button, with 3-2-1)</button>
+    <button class="btn btn-secondary" id="startBtn">Start now (button, with 10-second countdown)</button>
     <button class="btn btn-secondary" id="testBtn">Test sound</button>
 
     <div class="hint">Press Start (or arm the voice command in Chrome or Edge). It says "Video started" and the timer counts UP. It announces 5, 10, 15, 20 minutes and so on, then "1 minute to go" and "Time is up". Keep the tab open; it can sit in the background. Keep the device volume up and not muted. Press Test sound first.</div>
   </div>
 
   <div id="countView" style="display:none;">
-    <div class="big" id="countNum">3</div>
+    <div class="big" id="countNum">10</div>
     <div class="status">Get ready…</div>
   </div>
 
@@ -152,7 +152,7 @@ function beep(freq, ms){
 }
 
 // ---- Pre-recorded voice clips, played through Web Audio (same path as the beep) ----
-const CLIP_NAMES = ['start','c3','c2','c1','one','done'];
+const CLIP_NAMES = ['start','c10','c9','c8','c7','c6','c5','c4','c3','c2','c1','one','done'];
 for(let m = 5; m <= 120; m += 5) CLIP_NAMES.push('m' + m);
 const clipBuf = {};
 let clipsLoading = false;
@@ -160,7 +160,7 @@ let clipQueueEnd = 0;
 
 function clipFor(text){
   if(text === 'Start. Video started.') return 'start';
-  if(text === '3' || text === '2' || text === '1') return 'c' + text;
+  if(/^(10|[1-9])$/.test(text)) return 'c' + text;
   if(text === '1 minute to go') return 'one';
   if(text.indexOf('Time is up') === 0) return 'done';
   const mm = /^(\d+) minutes completed$/.exec(text);
@@ -279,14 +279,15 @@ function startSession(skipCountdown){
   countView.style.display = 'block';
 
   try{ window.speechSynthesis.cancel(); }catch(e){}
-  const steps = [['3', 0], ['2', 1000], ['1', 2000]];
+  const steps = [];
+  for(let i = 10; i >= 1; i--) steps.push([String(i), (10 - i) * 1000]);
   steps.forEach(([n, delay]) => {
     countTimers.push(setTimeout(() => {
       $('countNum').textContent = n;
       speak(n, true);
     }, delay));
   });
-  countTimers.push(setTimeout(beginRecording, 3000));
+  countTimers.push(setTimeout(beginRecording, 10000));
 }
 $('startBtn').addEventListener('click', () => startSession(false));
 
