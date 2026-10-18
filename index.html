@@ -66,7 +66,7 @@
 <body>
 
 <div class="card">
-  <div class="ver">v15</div>
+  <div class="ver">v16</div>
   <h1>Record Minutes Timer</h1>
   <div class="sub">Counts up while you record. Works with the tab in the background.</div>
 
@@ -807,6 +807,15 @@ try{
   if(sv.v === false) vibOn.checked = false;
 }catch(e){}
 [minutesInput, $('cdSecs'), vibOn].forEach((el) => el.addEventListener('change', saveSettings));
+
+
+// ---- Accidental reload / tab close guard: the browser always asks "Leave site?" first ----
+// Cancel keeps the page (timer keeps running). Only an explicit Leave/Reload reloads it.
+window.addEventListener('beforeunload', (e) => {
+  e.preventDefault();
+  e.returnValue = 'Are you sure you want to reload or leave this page?';
+  return e.returnValue;
+});
 
 try{ window.speechSynthesis.getVoices(); }catch(e){}
 ensureCtx();
