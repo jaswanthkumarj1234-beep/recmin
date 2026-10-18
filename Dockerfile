@@ -1,4 +1,4 @@
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 
 LABEL org.opencontainers.image.title="recmin" \
       org.opencontainers.image.description="Record Minutes Timer - voice-triggered recording countdown" \
