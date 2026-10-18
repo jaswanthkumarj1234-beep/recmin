@@ -1,0 +1,8 @@
+# Old versions kept locally only; git history is the backup now
+*.bak_*
+clips_orig/
+__pycache__/
+inline.js
+_site/
+.DS_Store
+Thumbs.db
