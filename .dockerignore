@@ -1,0 +1,10 @@
+.git
+.github
+*.bak_*
+clips_orig
+tests
+README.md
+Makefile
+docker-compose.yml
+Dockerfile
+.dockerignore
